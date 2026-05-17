@@ -11,66 +11,65 @@ import SwiftData
 /// 월간 캘린더 메인 뷰 — 날짜별 음식 누끼 스티커 표시
 struct CalendarView: View {
 
-    @Environment(\.modelContext) private var modelContext
-    @State private var viewModel: CalendarViewModel?
+    @State private var viewModel = CalendarViewModel()
 
-    // 7컬럼 그리드
+    /// SwiftData 변경 시 자동 갱신 트리거
+    @Query(sort: \Meal.date) private var allMeals: [Meal]
+
+    // 7콜럼 그리드
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
     private let weekdays = ["일", "월", "화", "수", "목", "금", "토"]
+
+    /// 현재 표시 월 식사 데이터 (바로 @Query 결과에서 필터/그룹핑)
+    private var mealsByDate: [String: [Meal]] {
+        let cal = Calendar.current
+        let filtered = allMeals.filter {
+            cal.component(.year,  from: $0.date) == viewModel.displayYear &&
+            cal.component(.month, from: $0.date) == viewModel.displayMonth
+        }
+        return Dictionary(grouping: filtered) { viewModel.dateKey(for: $0.date) }
+    }
+
+    private func mealsForDate(_ date: Date) -> [Meal] {
+        mealsByDate[viewModel.dateKey(for: date)] ?? []
+    }
 
     var body: some View {
         ZStack {
             Color(.systemGroupedBackground).ignoresSafeArea()
 
-            if let vm = viewModel {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        // 월 헤더
-                        monthHeader(vm: vm)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                            .padding(.bottom, 12)
+            ScrollView {
+                VStack(spacing: 0) {
+                    monthHeader
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 12)
 
-                        // 요일 헤더
-                        weekdayHeader
+                    weekdayHeader
+                    Divider()
 
-                        Divider()
-
-                        // 날짜 그리드
-                        LazyVGrid(columns: columns, spacing: 2) {
-                            ForEach(Array(vm.calendarDays().enumerated()), id: \.offset) { _, date in
-                                if let date {
-                                    dayCellButton(date: date, vm: vm)
-                                } else {
-                                    Color.clear
-                                        .frame(height: cellHeight)
-                                }
+                    LazyVGrid(columns: columns, spacing: 2) {
+                        ForEach(Array(viewModel.calendarDays().enumerated()), id: \.offset) { _, date in
+                            if let date {
+                                dayCellButton(date: date)
+                            } else {
+                                Color.clear.frame(height: cellHeight)
                             }
                         }
-                        .padding(.horizontal, 2)
                     }
+                    .padding(.horizontal, 2)
                 }
-            } else {
-                ProgressView()
             }
         }
         .navigationTitle("WhatDidYouEat")
         .navigationBarTitleDisplayMode(.large)
-        .onAppear { setupViewModelIfNeeded() }
-        // 날짜 상세 뷰 이동
         .navigationDestination(
             item: Binding(
-                get: { viewModel?.selectedDate },
-                set: { viewModel?.selectedDate = $0 }
+                get: { viewModel.selectedDate },
+                set: { viewModel.selectedDate = $0 }
             )
         ) { date in
-            if let vm = viewModel {
-                DayDetailView(
-                    date: date,
-                    meals: vm.meals(for: date),
-                    onMealDeleted: { await vm.loadMeals() }
-                )
-            }
+            DayDetailView(date: date)
         }
     }
 
@@ -81,11 +80,11 @@ struct CalendarView: View {
     // MARK: - Month Header
 
     @ViewBuilder
-    private func monthHeader(vm: CalendarViewModel) -> some View {
+    private var monthHeader: some View {
         HStack {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    vm.goToPreviousMonth()
+                    viewModel.goToPreviousMonth()
                 }
             } label: {
                 Image(systemName: "chevron.left")
@@ -96,7 +95,7 @@ struct CalendarView: View {
 
             Spacer()
 
-            Text(vm.monthTitle)
+            Text(viewModel.monthTitle)
                 .font(.title2.bold())
                 .contentTransition(.numericText())
 
@@ -104,7 +103,7 @@ struct CalendarView: View {
 
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    vm.goToNextMonth()
+                    viewModel.goToNextMonth()
                 }
             } label: {
                 Image(systemName: "chevron.right")
@@ -134,28 +133,19 @@ struct CalendarView: View {
     // MARK: - Day Cell Button
 
     @ViewBuilder
-    private func dayCellButton(date: Date, vm: CalendarViewModel) -> some View {
+    private func dayCellButton(date: Date) -> some View {
         Button {
-            vm.selectedDate = date
+            viewModel.selectedDate = date
         } label: {
             DayCell(
                 date: date,
-                meals: vm.meals(for: date),
-                isToday: vm.isToday(date)
+                meals: mealsForDate(date),
+                isToday: viewModel.isToday(date)
             )
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Setup
-
-    private func setupViewModelIfNeeded() {
-        guard viewModel == nil else { return }
-        viewModel = CalendarViewModel(
-            repository: LocalMealRepository(modelContext: modelContext)
-        )
-        Task { await viewModel?.loadMeals() }
-    }
 }
 
 // MARK: - DayCell

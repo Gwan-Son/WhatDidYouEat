@@ -7,86 +7,53 @@
 
 import Foundation
 
+/// 캘린더 월 이동 + 그리드 계산 전담
+/// 데이터 로딩은 CalendarView의 @Query가 담당 → SwiftData 변경 자동 감지
 @Observable
 @MainActor
 final class CalendarViewModel {
 
     // MARK: - State
 
-    /// 현재 표시 중인 연도
     var displayYear: Int
-    /// 현재 표시 중인 월 (1~12)
     var displayMonth: Int
-    /// 날짜별 식사 기록 캐시  key: "yyyy-MM-dd"
-    var mealsByDate: [String: [Meal]] = [:]
-    /// 상세 뷰로 이동할 선택된 날짜
     var selectedDate: Date? = nil
-    /// 데이터 로딩 상태
-    var isLoading: Bool = false
 
-    private let repository: any MealRepository
     private let calendar: Calendar = {
         var cal = Calendar.current
-        cal.firstWeekday = 1  // 일요일 시작
+        cal.firstWeekday = 1
         return cal
     }()
 
     // MARK: - Init
 
-    init(repository: any MealRepository) {
+    init() {
         let now = Date()
         let cal = Calendar.current
         self.displayYear  = cal.component(.year,  from: now)
         self.displayMonth = cal.component(.month, from: now)
-        self.repository   = repository
     }
 
     // MARK: - Public
 
-    /// 이전 달로 이동
     func goToPreviousMonth() {
         var components = DateComponents()
         components.year  = displayYear
         components.month = displayMonth - 1
-
         if let date = calendar.date(from: components) {
             displayYear  = calendar.component(.year,  from: date)
             displayMonth = calendar.component(.month, from: date)
-            Task { await loadMeals() }
         }
     }
 
-    /// 다음 달로 이동
     func goToNextMonth() {
         var components = DateComponents()
         components.year  = displayYear
         components.month = displayMonth + 1
-
         if let date = calendar.date(from: components) {
             displayYear  = calendar.component(.year,  from: date)
             displayMonth = calendar.component(.month, from: date)
-            Task { await loadMeals() }
         }
-    }
-
-    /// 현재 displayYear/displayMonth의 식사 기록을 로드
-    func loadMeals() async {
-        isLoading = true
-        let meals = await repository.fetchMeals(year: displayYear, month: displayMonth)
-
-        // 날짜별로 그룹핑
-        var grouped: [String: [Meal]] = [:]
-        for meal in meals {
-            let key = dateKey(for: meal.date)
-            grouped[key, default: []].append(meal)
-        }
-        mealsByDate = grouped
-        isLoading = false
-    }
-
-    /// 특정 날짜의 식사 목록 반환
-    func meals(for date: Date) -> [Meal] {
-        mealsByDate[dateKey(for: date)] ?? []
     }
 
     // MARK: - Calendar Grid
@@ -135,7 +102,7 @@ final class CalendarViewModel {
 
     // MARK: - Private
 
-    private func dateKey(for date: Date) -> String {
+    func dateKey(for date: Date) -> String {
         let comps = calendar.dateComponents([.year, .month, .day], from: date)
         return "\(comps.year ?? 0)-\(String(format: "%02d", comps.month ?? 0))-\(String(format: "%02d", comps.day ?? 0))"
     }
