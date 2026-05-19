@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 /// 특정 날짜의 식사 기록 상세 뷰
 struct DayDetailView: View {
@@ -13,13 +14,23 @@ struct DayDetailView: View {
     @Environment(\.modelContext) private var modelContext
 
     let date: Date
-    let meals: [Meal]
 
-    /// 삭제 후 부모(CalendarView)에게 리로드 요청
-    let onMealDeleted: () async -> Void
+    /// @Query로 자동 갱신 — 해당 날짜 식사만 필터
+    @Query private var meals: [Meal]
 
     @State private var mealToDelete: Meal? = nil
     @State private var showDeleteConfirm = false
+
+    init(date: Date) {
+        self.date = date
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: date)
+        let end   = cal.date(byAdding: .day, value: 1, to: start)!
+        _meals = Query(
+            filter: #Predicate<Meal> { $0.date >= start && $0.date < end },
+            sort: \.createdAt
+        )
+    }
 
     private var dateTitle: String {
         let formatter = DateFormatter()
@@ -45,11 +56,8 @@ struct DayDetailView: View {
         ) {
             Button("삭제", role: .destructive) {
                 if let meal = mealToDelete {
-                    Task {
-                        let repo = LocalMealRepository(modelContext: modelContext)
-                        try? await repo.delete(meal)
-                        await onMealDeleted()
-                    }
+                    modelContext.delete(meal)
+                    try? modelContext.save()
                 }
             }
             Button("취소", role: .cancel) {}
