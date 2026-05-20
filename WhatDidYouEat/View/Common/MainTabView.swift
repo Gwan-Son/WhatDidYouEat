@@ -21,12 +21,20 @@ struct MainTabView: View {
                 Label("캘린더", systemImage: "calendar")
             }
 
-            // Tab 2: 기록하기 (카메라/갤러리 진입점)
+            // Tab 2: 기록하기
             NavigationStack {
                 CameraView()
             }
             .tabItem {
                 Label("기록하기", systemImage: "camera.fill")
+            }
+
+            // Tab 3: 통계
+            NavigationStack {
+                StatsView()
+            }
+            .tabItem {
+                Label("통계", systemImage: "chart.bar.fill")
             }
         }
         .tint(.orange)
