@@ -15,6 +15,7 @@ struct CameraView: View {
 
     /// onAppear에서 modelContext를 받아 초기화
     @State private var viewModel: CameraViewModel?
+    @State private var pendingGalleryImage: UIImage?
 
     var body: some View {
         ZStack {
@@ -47,10 +48,16 @@ struct CameraView: View {
         .sheet(isPresented: Binding(
             get: { viewModel?.showingImagePicker ?? false },
             set: { viewModel?.showingImagePicker = $0 }
-        )) {
+        ), onDismiss: {
+            guard let image = pendingGalleryImage else { return }
+            pendingGalleryImage = nil
+            Task { await viewModel?.processImage(image) }
+        }) {
             ImagePickerView { image in
+                pendingGalleryImage = image
                 viewModel?.showingImagePicker = false
-                Task { await viewModel?.processImage(image) }
+            } onCancel: {
+                viewModel?.showingImagePicker = false
             }
         }
         // 카메라 피커
