@@ -7,6 +7,8 @@
 
 import SwiftUI
 import SwiftData
+import AVFoundation
+import UIKit
 
 /// 음식 기록 진입점 — 카메라 / 갤러리 선택 + Vision 처리 상태 표시
 struct CameraView: View {
@@ -16,6 +18,9 @@ struct CameraView: View {
     /// onAppear에서 modelContext를 받아 초기화
     @State private var viewModel: CameraViewModel?
     @State private var pendingGalleryImage: UIImage?
+    @State private var pendingGalleryError: MaskError?
+    @State private var pendingCameraImage: UIImage?
+    @State private var pendingCameraError: MaskError?
 
     var body: some View {
         ZStack {
@@ -49,14 +54,25 @@ struct CameraView: View {
             get: { viewModel?.showingImagePicker ?? false },
             set: { viewModel?.showingImagePicker = $0 }
         ), onDismiss: {
-            guard let image = pendingGalleryImage else { return }
-            pendingGalleryImage = nil
-            Task { await viewModel?.processImage(image) }
+            if let image = pendingGalleryImage {
+                pendingGalleryImage = nil
+                Task { await viewModel?.processImage(image) }
+            } else if let error = pendingGalleryError {
+                pendingGalleryError = nil
+                viewModel?.showError(error)
+            }
         }) {
             ImagePickerView { image in
+                pendingGalleryError = nil
                 pendingGalleryImage = image
                 viewModel?.showingImagePicker = false
             } onCancel: {
+                pendingGalleryImage = nil
+                pendingGalleryError = nil
+                viewModel?.showingImagePicker = false
+            } onLoadFailed: {
+                pendingGalleryImage = nil
+                pendingGalleryError = .photoLibraryLoadFailed
                 viewModel?.showingImagePicker = false
             }
         }
@@ -64,10 +80,27 @@ struct CameraView: View {
         .fullScreenCover(isPresented: Binding(
             get: { viewModel?.showingCameraPicker ?? false },
             set: { viewModel?.showingCameraPicker = $0 }
-        )) {
-            CameraPickerView { image in
-                viewModel?.showingCameraPicker = false
+        ), onDismiss: {
+            if let image = pendingCameraImage {
+                pendingCameraImage = nil
                 Task { await viewModel?.processImage(image) }
+            } else if let error = pendingCameraError {
+                pendingCameraError = nil
+                viewModel?.showError(error)
+            }
+        }) {
+            CameraPickerView { image in
+                pendingCameraError = nil
+                pendingCameraImage = image
+                viewModel?.showingCameraPicker = false
+            } onCancel: {
+                pendingCameraImage = nil
+                pendingCameraError = nil
+                viewModel?.showingCameraPicker = false
+            } onCaptureFailed: {
+                pendingCameraImage = nil
+                pendingCameraError = .captureFailed
+                viewModel?.showingCameraPicker = false
             }
             .ignoresSafeArea()
         }
@@ -92,10 +125,7 @@ struct CameraView: View {
 
             // 상단 안내
             VStack(spacing: 12) {
-                Image(systemName: "fork.knife.circle.fill")
-                    .font(.system(size: 72))
-                    .foregroundStyle(.orange)
-                    .symbolEffect(.bounce, options: .nonRepeating)
+                heroIcon
 
                 Text("오늘 뭐 먹었어?")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
@@ -113,7 +143,7 @@ struct CameraView: View {
             VStack(spacing: 14) {
                 // 카메라 버튼 (primary)
                 Button {
-                    vm.showingCameraPicker = true
+                    Task { await openCameraIfAvailable(vm: vm) }
                 } label: {
                     Label("카메라로 촬영", systemImage: "camera.fill")
                         .font(.headline)
@@ -139,6 +169,19 @@ struct CameraView: View {
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 40)
+        }
+    }
+
+    @ViewBuilder
+    private var heroIcon: some View {
+        let image = Image(systemName: "fork.knife.circle.fill")
+            .font(.system(size: 72))
+            .foregroundStyle(.orange)
+
+        if #available(iOS 18.0, *) {
+            image.symbolEffect(.bounce, options: .nonRepeating)
+        } else {
+            image
         }
     }
 
@@ -201,6 +244,40 @@ struct CameraView: View {
         viewModel = CameraViewModel(
             repository: LocalMealRepository(modelContext: modelContext)
         )
+    }
+
+    @MainActor
+    private func openCameraIfAvailable(vm: CameraViewModel) async {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            vm.showError(.cameraUnavailable)
+            return
+        }
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            vm.showingCameraPicker = true
+        case .notDetermined:
+            let granted = await AVCaptureDevice.requestVideoAccess()
+            if granted {
+                vm.showingCameraPicker = true
+            } else {
+                vm.showError(.cameraPermissionDenied)
+            }
+        case .denied, .restricted:
+            vm.showError(.cameraPermissionDenied)
+        @unknown default:
+            vm.showError(.cameraUnavailable)
+        }
+    }
+}
+
+private extension AVCaptureDevice {
+    static func requestVideoAccess() async -> Bool {
+        await withCheckedContinuation { continuation in
+            requestAccess(for: .video) { granted in
+                continuation.resume(returning: granted)
+            }
+        }
     }
 }
 

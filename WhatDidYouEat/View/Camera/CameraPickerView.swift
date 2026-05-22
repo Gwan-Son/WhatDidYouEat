@@ -13,6 +13,8 @@ struct CameraPickerView: UIViewControllerRepresentable {
 
     /// 촬영된 이미지를 전달할 클로저
     let onImageCaptured: (UIImage) -> Void
+    let onCancel: () -> Void
+    let onCaptureFailed: () -> Void
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
@@ -26,7 +28,11 @@ struct CameraPickerView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onImageCaptured: onImageCaptured)
+        Coordinator(
+            onImageCaptured: onImageCaptured,
+            onCancel: onCancel,
+            onCaptureFailed: onCaptureFailed
+        )
     }
 
     // MARK: - Coordinator
@@ -36,24 +42,32 @@ struct CameraPickerView: UIViewControllerRepresentable {
                               UINavigationControllerDelegate {
 
         let onImageCaptured: (UIImage) -> Void
+        let onCancel: () -> Void
+        let onCaptureFailed: () -> Void
 
-        init(onImageCaptured: @escaping (UIImage) -> Void) {
+        init(
+            onImageCaptured: @escaping (UIImage) -> Void,
+            onCancel: @escaping () -> Void,
+            onCaptureFailed: @escaping () -> Void
+        ) {
             self.onImageCaptured = onImageCaptured
+            self.onCancel = onCancel
+            self.onCaptureFailed = onCaptureFailed
         }
 
         func imagePickerController(
             _ picker: UIImagePickerController,
             didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
         ) {
-            picker.dismiss(animated: true)
-
             if let image = info[.originalImage] as? UIImage {
                 onImageCaptured(image)
+            } else {
+                onCaptureFailed()
             }
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            picker.dismiss(animated: true)
+            onCancel()
         }
     }
 }

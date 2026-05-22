@@ -87,6 +87,10 @@ final class CameraViewModel {
 
     // MARK: - Actions
 
+    func showError(_ error: MaskError) {
+        cameraState = .error(error)
+    }
+
     /// 이미지를 받아 Vision 배경 제거를 실행합니다.
     func processImage(_ image: UIImage) async {
         cameraState = .processing

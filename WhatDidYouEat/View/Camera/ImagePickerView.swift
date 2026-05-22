@@ -14,6 +14,7 @@ struct ImagePickerView: UIViewControllerRepresentable {
     /// 선택된 이미지를 전달할 클로저
     let onImageSelected: (UIImage) -> Void
     let onCancel: () -> Void
+    let onLoadFailed: () -> Void
 
     func makeUIViewController(context: Context) -> PHPickerViewController {
         var config = PHPickerConfiguration()
@@ -29,7 +30,11 @@ struct ImagePickerView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onImageSelected: onImageSelected, onCancel: onCancel)
+        Coordinator(
+            onImageSelected: onImageSelected,
+            onCancel: onCancel,
+            onLoadFailed: onLoadFailed
+        )
     }
 
     // MARK: - Coordinator
@@ -37,10 +42,16 @@ struct ImagePickerView: UIViewControllerRepresentable {
     final class Coordinator: NSObject, PHPickerViewControllerDelegate {
         let onImageSelected: (UIImage) -> Void
         let onCancel: () -> Void
+        let onLoadFailed: () -> Void
 
-        init(onImageSelected: @escaping (UIImage) -> Void, onCancel: @escaping () -> Void) {
+        init(
+            onImageSelected: @escaping (UIImage) -> Void,
+            onCancel: @escaping () -> Void,
+            onLoadFailed: @escaping () -> Void
+        ) {
             self.onImageSelected = onImageSelected
             self.onCancel = onCancel
+            self.onLoadFailed = onLoadFailed
         }
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
@@ -58,7 +69,7 @@ struct ImagePickerView: UIViewControllerRepresentable {
                     }
                 } else {
                     DispatchQueue.main.async {
-                        self?.onCancel()
+                        self?.onLoadFailed()
                     }
                 }
             }
