@@ -19,6 +19,7 @@ struct DayDetailView: View {
     @Query private var meals: [Meal]
 
     @State private var mealToDelete: Meal? = nil
+    @State private var mealToEdit: Meal? = nil
     @State private var showDeleteConfirm = false
 
     init(date: Date) {
@@ -49,6 +50,9 @@ struct DayDetailView: View {
         }
         .navigationTitle(dateTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $mealToEdit) { meal in
+            EditMealView(meal: meal)
+        }
         .confirmationDialog(
             "이 기록을 삭제할까요?",
             isPresented: $showDeleteConfirm,
@@ -73,6 +77,9 @@ struct DayDetailView: View {
                 ForEach(meals) { meal in
                     MealCardView(
                         meal: meal,
+                        onEdit: {
+                            mealToEdit = meal
+                        },
                         onDelete: {
                             mealToDelete = meal
                             showDeleteConfirm = true
@@ -106,6 +113,7 @@ struct DayDetailView: View {
 private struct MealCardView: View {
 
     let meal: Meal
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -158,6 +166,14 @@ private struct MealCardView: View {
 
                 Spacer()
 
+                Button {
+                    onEdit()
+                } label: {
+                    Label("수정", systemImage: "pencil")
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
+                }
+
                 // 삭제
                 Button(role: .destructive) {
                     onDelete()
@@ -172,5 +188,82 @@ private struct MealCardView: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
+    }
+}
+
+// MARK: - EditMealView
+
+private struct EditMealView: View {
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    let meal: Meal
+
+    @State private var mealName: String
+    @State private var memo: String
+    @State private var mealDate: Date
+    @FocusState private var focusedField: Field?
+
+    private enum Field { case name, memo }
+
+    init(meal: Meal) {
+        self.meal = meal
+        _mealName = State(initialValue: meal.name ?? "")
+        _memo = State(initialValue: meal.memo ?? "")
+        _mealDate = State(initialValue: meal.date)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DatePicker(
+                        "먹은 날짜",
+                        selection: $mealDate,
+                        in: ...Date(),
+                        displayedComponents: .date
+                    )
+                    .tint(.orange)
+                }
+
+                Section("기록") {
+                    TextField("음식 이름", text: $mealName)
+                        .focused($focusedField, equals: .name)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .memo }
+
+                    TextField("메모", text: $memo, axis: .vertical)
+                        .lineLimit(3, reservesSpace: true)
+                        .focused($focusedField, equals: .memo)
+                        .submitLabel(.done)
+                        .onSubmit { focusedField = nil }
+                }
+            }
+            .navigationTitle("기록 수정")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("취소") { dismiss() }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("저장") { saveChanges() }
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+
+    private func saveChanges() {
+        let trimmedName = mealName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedMemo = memo.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        meal.date = mealDate
+        meal.name = trimmedName.isEmpty ? nil : trimmedName
+        meal.memo = trimmedMemo.isEmpty ? nil : trimmedMemo
+
+        try? modelContext.save()
+        dismiss()
     }
 }
