@@ -13,26 +13,7 @@ struct CalendarView: View {
 
     @State private var viewModel = CalendarViewModel()
 
-    /// SwiftData 변경 시 자동 갱신 트리거
-    @Query(sort: \Meal.date) private var allMeals: [Meal]
-
-    // 7콜럼 그리드
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
     private let weekdays = ["일", "월", "화", "수", "목", "금", "토"]
-
-    /// 현재 표시 월 식사 데이터 (바로 @Query 결과에서 필터/그룹핑)
-    private var mealsByDate: [String: [Meal]] {
-        let cal = Calendar.current
-        let filtered = allMeals.filter {
-            cal.component(.year,  from: $0.date) == viewModel.displayYear &&
-            cal.component(.month, from: $0.date) == viewModel.displayMonth
-        }
-        return Dictionary(grouping: filtered) { viewModel.dateKey(for: $0.date) }
-    }
-
-    private func mealsForDate(_ date: Date) -> [Meal] {
-        mealsByDate[viewModel.dateKey(for: date)] ?? []
-    }
 
     var body: some View {
         ZStack {
@@ -48,16 +29,16 @@ struct CalendarView: View {
                     weekdayHeader
                     Divider()
 
-                    LazyVGrid(columns: columns, spacing: 2) {
-                        ForEach(Array(viewModel.calendarDays().enumerated()), id: \.offset) { _, date in
-                            if let date {
-                                dayCellButton(date: date)
-                            } else {
-                                Color.clear.frame(height: cellHeight)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 2)
+                    MonthMealGrid(
+                        year: viewModel.displayYear,
+                        month: viewModel.displayMonth,
+                        days: viewModel.calendarDays(),
+                        selectedDate: Binding(
+                            get: { viewModel.selectedDate },
+                            set: { viewModel.selectedDate = $0 }
+                        )
+                    )
+                    .id("\(viewModel.displayYear)-\(viewModel.displayMonth)")
                 }
             }
         }
@@ -72,10 +53,6 @@ struct CalendarView: View {
             DayDetailView(date: date)
         }
     }
-
-    // MARK: - Cell Height
-
-    private var cellHeight: CGFloat { 90 }
 
     // MARK: - Month Header
 
@@ -130,22 +107,76 @@ struct CalendarView: View {
         .padding(.horizontal, 2)
     }
 
-    // MARK: - Day Cell Button
+}
+
+// MARK: - MonthMealGrid
+
+private struct MonthMealGrid: View {
+
+    let days: [Date?]
+    @Binding var selectedDate: Date?
+
+    @Query private var monthMeals: [Meal]
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
+    private let calendar = Calendar.current
+
+    init(year: Int, month: Int, days: [Date?], selectedDate: Binding<Date?>) {
+        self.days = days
+        _selectedDate = selectedDate
+
+        var comps = DateComponents()
+        comps.year = year
+        comps.month = month
+        comps.day = 1
+
+        let calendar = Calendar.current
+        let start = calendar.date(from: comps) ?? Date()
+        let end = calendar.date(byAdding: .month, value: 1, to: start) ?? start
+
+        _monthMeals = Query(
+            filter: #Predicate<Meal> { meal in
+                meal.date >= start && meal.date < end
+            },
+            sort: \.date
+        )
+    }
+
+    private var mealsByDate: [String: [Meal]] {
+        Dictionary(grouping: monthMeals) { dateKey(for: $0.date) }
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 2) {
+            ForEach(Array(days.enumerated()), id: \.offset) { _, date in
+                if let date {
+                    dayCellButton(date: date)
+                } else {
+                    Color.clear.frame(height: 90)
+                }
+            }
+        }
+        .padding(.horizontal, 2)
+    }
 
     @ViewBuilder
     private func dayCellButton(date: Date) -> some View {
         Button {
-            viewModel.selectedDate = date
+            selectedDate = date
         } label: {
             DayCell(
                 date: date,
-                meals: mealsForDate(date),
-                isToday: viewModel.isToday(date)
+                meals: mealsByDate[dateKey(for: date)] ?? [],
+                isToday: calendar.isDateInToday(date)
             )
         }
         .buttonStyle(.plain)
     }
 
+    private func dateKey(for date: Date) -> String {
+        let comps = calendar.dateComponents([.year, .month, .day], from: date)
+        return "\(comps.year ?? 0)-\(String(format: "%02d", comps.month ?? 0))-\(String(format: "%02d", comps.day ?? 0))"
+    }
 }
 
 // MARK: - DayCell
