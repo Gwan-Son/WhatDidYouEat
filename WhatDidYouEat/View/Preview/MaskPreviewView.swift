@@ -26,6 +26,9 @@ struct MaskPreviewView: View {
                     // MARK: 누끼 이미지 미리보기
                     maskedImageSection
 
+                    // MARK: 편집 컨트롤
+                    editSection
+
                     // MARK: 날짜 선택
                     dateSection
 
@@ -61,11 +64,13 @@ struct MaskPreviewView: View {
             CheckerboardBackground()
                 .clipShape(RoundedRectangle(cornerRadius: 20))
 
-            if let maskedImage = viewModel.maskResult?.maskedImage {
-                Image(uiImage: maskedImage)
+            if let previewImage = viewModel.previewImage {
+                Image(uiImage: previewImage)
                     .resizable()
                     .scaledToFit()
                     .padding(12)
+                    .scaleEffect(viewModel.stickerScale)
+                    .rotationEffect(.degrees(viewModel.stickerRotation))
             }
         }
         .frame(maxWidth: .infinity)
@@ -74,6 +79,64 @@ struct MaskPreviewView: View {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(Color(.systemGray4), lineWidth: 1)
         )
+        .clipped()
+    }
+
+    @ViewBuilder
+    private var editSection: some View {
+        VStack(spacing: 14) {
+            Toggle(isOn: $viewModel.useOriginalImage) {
+                Label("원본 이미지 사용", systemImage: "photo")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.secondary)
+            }
+            .tint(.orange)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("크기", systemImage: "plus.magnifyingglass")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(Int(viewModel.stickerScale * 100))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+
+                Slider(value: $viewModel.stickerScale, in: 0.5...1.8, step: 0.05)
+                    .tint(.orange)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("회전", systemImage: "rotate.right")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(Int(viewModel.stickerRotation))°")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+
+                Slider(value: $viewModel.stickerRotation, in: -45...45, step: 1)
+                    .tint(.orange)
+            }
+
+            Button {
+                viewModel.useOriginalImage = false
+                viewModel.stickerScale = 1.0
+                viewModel.stickerRotation = 0
+            } label: {
+                Label("편집 초기화", systemImage: "arrow.counterclockwise")
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(.orange)
+        }
+        .padding(16)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     @ViewBuilder
