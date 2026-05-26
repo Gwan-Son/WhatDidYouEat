@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import AVFoundation
 
 /// 특정 날짜의 식사 기록 상세 뷰
 struct DayDetailView: View {
@@ -203,7 +204,16 @@ private struct EditMealView: View {
     @State private var mealName: String
     @State private var memo: String
     @State private var mealDate: Date
+    @State private var originalImageData: Data?
+    @State private var maskedImageData: Data
+    @State private var isProcessingImage = false
+    @State private var imageErrorMessage: String?
+    @State private var showingPhotoSourceDialog = false
+    @State private var showingImagePicker = false
+    @State private var showingCameraPicker = false
     @FocusState private var focusedField: Field?
+
+    private let maskService = VisionMaskService()
 
     private enum Field { case name, memo }
 
@@ -212,11 +222,31 @@ private struct EditMealView: View {
         _mealName = State(initialValue: meal.name ?? "")
         _memo = State(initialValue: meal.memo ?? "")
         _mealDate = State(initialValue: meal.date)
+        _originalImageData = State(initialValue: meal.originalImageData)
+        _maskedImageData = State(initialValue: meal.maskedImageData)
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    editImagePreview
+
+                    Button {
+                        showingPhotoSourceDialog = true
+                    } label: {
+                        Label("사진 변경", systemImage: "photo.badge.plus")
+                    }
+                    .disabled(isProcessingImage)
+                } header: {
+                    Text("사진")
+                } footer: {
+                    if let imageErrorMessage {
+                        Text(imageErrorMessage)
+                            .foregroundStyle(.red)
+                    }
+                }
+
                 Section {
                     DatePicker(
                         "먹은 날짜",
@@ -242,6 +272,44 @@ private struct EditMealView: View {
             }
             .navigationTitle("기록 수정")
             .navigationBarTitleDisplayMode(.inline)
+            .confirmationDialog(
+                "사진 변경",
+                isPresented: $showingPhotoSourceDialog,
+                titleVisibility: .visible
+            ) {
+                Button("카메라로 촬영") {
+                    Task { await openCameraIfAvailable() }
+                }
+
+                Button("갤러리에서 선택") {
+                    showingImagePicker = true
+                }
+
+                Button("취소", role: .cancel) {}
+            }
+            .sheet(isPresented: $showingImagePicker) {
+                ImagePickerView { image in
+                    showingImagePicker = false
+                    Task { await replaceImage(with: image) }
+                } onCancel: {
+                    showingImagePicker = false
+                } onLoadFailed: {
+                    showingImagePicker = false
+                    imageErrorMessage = MaskError.photoLibraryLoadFailed.localizedDescription
+                }
+            }
+            .sheet(isPresented: $showingCameraPicker) {
+                CameraPickerView { image in
+                    showingCameraPicker = false
+                    Task { await replaceImage(with: image) }
+                } onCancel: {
+                    showingCameraPicker = false
+                } onCaptureFailed: {
+                    showingCameraPicker = false
+                    imageErrorMessage = MaskError.captureFailed.localizedDescription
+                }
+                .ignoresSafeArea()
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("취소") { dismiss() }
@@ -255,15 +323,87 @@ private struct EditMealView: View {
         }
     }
 
+    @ViewBuilder
+    private var editImagePreview: some View {
+        ZStack {
+            CheckerboardBackground()
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            if let image = UIImage(data: maskedImageData) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(8)
+            }
+
+            if isProcessingImage {
+                Color.black.opacity(0.18)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                ProgressView()
+                    .tint(.white)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 180)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color(.systemGray5), lineWidth: 1)
+        }
+    }
+
     private func saveChanges() {
         let trimmedName = mealName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedMemo = memo.trimmingCharacters(in: .whitespacesAndNewlines)
 
         meal.date = mealDate
+        meal.originalImageData = originalImageData
+        meal.maskedImageData = maskedImageData
         meal.name = trimmedName.isEmpty ? nil : trimmedName
         meal.memo = trimmedMemo.isEmpty ? nil : trimmedMemo
 
         try? modelContext.save()
         dismiss()
+    }
+
+    private func replaceImage(with image: UIImage) async {
+        isProcessingImage = true
+        imageErrorMessage = nil
+
+        do {
+            let result = try await maskService.removeBackground(from: image)
+            originalImageData = result.originalImage.jpegData(compressionQuality: 0.8)
+            maskedImageData = result.maskedImageData
+        } catch let error as MaskError {
+            imageErrorMessage = error.localizedDescription
+        } catch {
+            imageErrorMessage = MaskError.renderFailed.localizedDescription
+        }
+
+        isProcessingImage = false
+    }
+
+    private func openCameraIfAvailable() async {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            showingImagePicker = true
+            imageErrorMessage = MaskError.cameraUnavailable.localizedDescription
+            return
+        }
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            showingCameraPicker = true
+        case .notDetermined:
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            if granted {
+                showingCameraPicker = true
+            } else {
+                imageErrorMessage = MaskError.cameraPermissionDenied.localizedDescription
+            }
+        case .denied, .restricted:
+            imageErrorMessage = MaskError.cameraPermissionDenied.localizedDescription
+        @unknown default:
+            imageErrorMessage = MaskError.cameraPermissionDenied.localizedDescription
+        }
     }
 }

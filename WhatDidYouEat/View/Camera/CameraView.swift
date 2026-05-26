@@ -14,6 +14,7 @@ import UIKit
 struct CameraView: View {
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
 
     /// onAppear에서 modelContext를 받아 초기화
     @State private var viewModel: CameraViewModel?
@@ -224,17 +225,84 @@ struct CameraView: View {
                 }
             }
 
-            Button("다시 시도") {
-                vm.reset()
+            VStack(spacing: 12) {
+                primaryErrorButton(error: error, vm: vm)
+
+                if !isSettingsOnlyError(error) {
+                    Button("닫기") {
+                        vm.reset()
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
             }
-            .font(.headline)
-            .padding(.horizontal, 32)
-            .padding(.vertical, 14)
-            .background(.orange)
-            .foregroundStyle(.white)
-            .clipShape(Capsule())
         }
         .padding(.horizontal, 32)
+    }
+
+    @ViewBuilder
+    private func primaryErrorButton(error: MaskError, vm: CameraViewModel) -> some View {
+        Button {
+            handlePrimaryErrorAction(error: error, vm: vm)
+        } label: {
+            Label(primaryErrorActionTitle(for: error), systemImage: primaryErrorActionIcon(for: error))
+                .font(.headline)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 14)
+                .background(.orange)
+                .foregroundStyle(.white)
+                .clipShape(Capsule())
+        }
+    }
+
+    private func primaryErrorActionTitle(for error: MaskError) -> String {
+        switch error {
+        case .cameraPermissionDenied:
+            return "설정 열기"
+        case .cameraUnavailable, .photoLibraryLoadFailed:
+            return "갤러리에서 선택"
+        case .captureFailed:
+            return "다시 촬영"
+        default:
+            return "다시 시도"
+        }
+    }
+
+    private func isSettingsOnlyError(_ error: MaskError) -> Bool {
+        if case .cameraPermissionDenied = error {
+            return true
+        }
+        return false
+    }
+
+    private func primaryErrorActionIcon(for error: MaskError) -> String {
+        switch error {
+        case .cameraPermissionDenied:
+            return "gearshape"
+        case .cameraUnavailable, .photoLibraryLoadFailed:
+            return "photo.on.rectangle"
+        case .captureFailed:
+            return "camera.fill"
+        default:
+            return "arrow.clockwise"
+        }
+    }
+
+    private func handlePrimaryErrorAction(error: MaskError, vm: CameraViewModel) {
+        switch error {
+        case .cameraPermissionDenied:
+            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                openURL(settingsURL)
+            }
+        case .cameraUnavailable, .photoLibraryLoadFailed:
+            vm.reset()
+            vm.showingImagePicker = true
+        case .captureFailed:
+            vm.reset()
+            Task { await openCameraIfAvailable(vm: vm) }
+        default:
+            vm.reset()
+        }
     }
 
     // MARK: - Setup

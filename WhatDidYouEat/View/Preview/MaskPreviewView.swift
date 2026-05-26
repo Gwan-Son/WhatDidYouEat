@@ -118,7 +118,7 @@ struct MaskPreviewView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Slider(value: $viewModel.stickerRotation, in: -45...45, step: 1)
+                Slider(value: $viewModel.stickerRotation, in: -360...360, step: 1)
                     .tint(.orange)
             }
 
