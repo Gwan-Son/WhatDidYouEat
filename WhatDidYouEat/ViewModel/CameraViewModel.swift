@@ -52,6 +52,12 @@ final class CameraViewModel {
     var memo: String = ""
     /// 먹은 날짜 (기본: 오늘)
     var mealDate: Date = Date()
+    /// 누끼 대신 원본 이미지 저장 여부
+    var useOriginalImage: Bool = false
+    /// 저장 전 이미지 확대/축소
+    var stickerScale: Double = 1.0
+    /// 저장 전 이미지 회전 각도
+    var stickerRotation: Double = 0
 
     // MARK: Sheet Presentation
 
@@ -63,6 +69,11 @@ final class CameraViewModel {
     var maskResult: MaskResult? {
         guard case .preview(let result) = cameraState else { return nil }
         return result
+    }
+
+    var previewImage: UIImage? {
+        guard let result = maskResult else { return nil }
+        return useOriginalImage ? result.originalImage : result.maskedImage
     }
 
     var isShowingPreview: Bool {
@@ -114,7 +125,7 @@ final class CameraViewModel {
         let meal = Meal(
             date: mealDate,
             originalImageData: result.originalImage.jpegData(compressionQuality: 0.8),
-            maskedImageData: result.maskedImageData,
+            maskedImageData: editedImageData(from: result),
             name: mealName.trimmingCharacters(in: .whitespaces).isEmpty ? nil : mealName,
             memo: memo.trimmingCharacters(in: .whitespaces).isEmpty ? nil : memo
         )
@@ -133,5 +144,36 @@ final class CameraViewModel {
         mealName = ""
         memo = ""
         mealDate = Date()
+        useOriginalImage = false
+        stickerScale = 1.0
+        stickerRotation = 0
+    }
+
+    private func editedImageData(from result: MaskResult) -> Data {
+        let sourceImage = useOriginalImage ? result.originalImage : result.maskedImage
+        let editedImage = renderEditedImage(sourceImage)
+        return editedImage.pngData() ?? result.maskedImageData
+    }
+
+    private func renderEditedImage(_ image: UIImage) -> UIImage {
+        let rendererFormat = UIGraphicsImageRendererFormat.default()
+        rendererFormat.opaque = false
+        rendererFormat.scale = image.scale
+
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: rendererFormat)
+        return renderer.image { context in
+            let cgContext = context.cgContext
+            cgContext.translateBy(x: image.size.width / 2, y: image.size.height / 2)
+            cgContext.rotate(by: CGFloat(stickerRotation * .pi / 180))
+            cgContext.scaleBy(x: stickerScale, y: stickerScale)
+
+            let drawRect = CGRect(
+                x: -image.size.width / 2,
+                y: -image.size.height / 2,
+                width: image.size.width,
+                height: image.size.height
+            )
+            image.draw(in: drawRect)
+        }
     }
 }

@@ -12,9 +12,25 @@ import SwiftData
 
 struct StatsView: View {
 
-    @Query(sort: \Meal.date) private var allMeals: [Meal]
+    @Query private var recentMeals: [Meal]
 
     private let calendar = Calendar.current
+    private let statsStartDate: Date
+
+    init() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? Date()
+        let start = calendar.date(byAdding: .year, value: -1, to: today) ?? today
+        self.statsStartDate = start
+
+        _recentMeals = Query(
+            filter: #Predicate<Meal> { meal in
+                meal.date >= start && meal.date < tomorrow
+            },
+            sort: \.date
+        )
+    }
 
     var body: some View {
         ScrollView {
@@ -44,8 +60,8 @@ struct StatsView: View {
     private var summarySection: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             StatCard(
-                title: "총 기록",
-                value: "\(allMeals.count)",
+                title: "최근 1년 기록",
+                value: "\(recentMeals.count)",
                 unit: "개",
                 icon: "fork.knife.circle.fill",
                 color: .orange
@@ -83,7 +99,7 @@ struct StatsView: View {
                 Text("기록 히트맵")
                     .font(.headline)
                 Spacer()
-                Text("최근 1년")
+                Text("올해")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -154,7 +170,7 @@ struct StatsView: View {
     /// 날짜별 식사 수 딕셔너리
     private var mealCountByDate: [String: Int] {
         var counts: [String: Int] = [:]
-        for meal in allMeals {
+        for meal in recentMeals {
             let key = dateKey(meal.date)
             counts[key, default: 0] += 1
         }
@@ -320,7 +336,7 @@ struct StatsView: View {
     // MARK: - 통계 계산
 
     private var recordedDaysCount: Int {
-        Set(allMeals.map { dateKey($0.date) }).count
+        Set(recentMeals.map { dateKey($0.date) }).count
     }
 
     private var currentStreak: Int {
@@ -334,9 +350,9 @@ struct StatsView: View {
     }
 
     private var longestStreak: Int {
-        guard !allMeals.isEmpty else { return 0 }
+        guard !recentMeals.isEmpty else { return 0 }
 
-        let recordedDates = Set(allMeals.map { calendar.startOfDay(for: $0.date) })
+        let recordedDates = Set(recentMeals.map { calendar.startOfDay(for: $0.date) })
             .sorted()
 
         var longest = 1
@@ -370,7 +386,7 @@ struct StatsView: View {
             }
             let y = calendar.component(.year,  from: target)
             let m = calendar.component(.month, from: target)
-            let count = allMeals.filter {
+            let count = recentMeals.filter {
                 calendar.component(.year,  from: $0.date) == y &&
                 calendar.component(.month, from: $0.date) == m
             }.count
